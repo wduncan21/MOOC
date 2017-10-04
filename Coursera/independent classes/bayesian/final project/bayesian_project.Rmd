@@ -1,0 +1,167 @@
+---
+title: "Bayesian modeling and prediction for movies"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(BAS)
+```
+```{r}
+
+```
+
+### Load data
+
+
+```{r load-data}
+load("movies.Rdata")
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+datasets contains 651 randomly sampled movies released before 2016. Each observation contains audience popularity (audience_score) and variables that might predict it. No random assignment is performed since all data are samples from real-life observatory data. As a result, no causality can be concluded from the analysis. Given the relatively large number of observations, this dataset should reflect general audience popularity 
+
+* * *
+
+## Part 2: Data manipulation
+
+Create new variable based on `title_type`: New variable should be called `feature_film` with levels yes (movies that are feature films) and no
+```{r}
+movies$feature_film <- as.factor(ifelse(movies$title_type == 'Feature Film',"yes","no"))
+
+```
+
+Create new variable based on `genre`: New variable should be called `drama` with levels yes (movies that are dramas) and no
+```{r}
+movies$drama <- as.factor(ifelse(movies$genre == 'Drama',"yes","no"))
+
+```
+
+Create new variable based on `mpaa_rating`: New variable should be called `mpaa_rating_R` with levels yes (movies that are R rated) and no
+```{r}
+movies$mpaa_rating_R<- as.factor(ifelse(movies$mpaa_rating == 'R',"yes","no"))
+```
+
+Create two new variables based on `thtr_rel_month`:
+New variable called `oscar_season` with levels yes (if movie is released in November, October, or December) and no
+New variable called `summer_season` with levels yes (if movie is released in May, June, July, or August) and no
+```{r}
+movies$oscar_season<- as.factor(ifelse(movies$thtr_rel_month >9,"yes","no"))
+movies$summer_season<- as.factor(ifelse(movies$thtr_rel_month >4 & movies$thtr_rel_month <9,"yes","no"))
+
+```
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+First we will do exploratory analysis on certain variables to see if they influence audience score.
+Boxplot below shows the relationship between whether a movie is featured film and audience score
+```{r}
+boxplot(movies$audience_score~movies$feature_film,main="Audience Score versus Feature Film", xlab="Feature_Film", 
+        ylab="Audience_Score")
+```
+
+The boxplot seems to suggest non-featured films will have higher score than featured films. To test if this is true, we can use bayesian hypothesis testing of whether the mean between two groups are significantly different
+```{r}
+bayes_inference(y = audience_score, x = feature_film, data = movies, statistic = "mean", type = "ht",null=0, alternative = "twosided")
+```
+
+This result clearly shows that there is a difference between whether a film is a featured movie
+We can apply this to other variables
+```{r}
+boxplot(movies$audience_score~movies$drama,main="Audience Score versus drama", xlab="drama", 
+        ylab="Audience_Score")
+bayes_inference(y = audience_score, x = drama, data = movies, statistic = "mean", type = "ht",null=0, alternative = "twosided")
+```
+
+The results above show that drama movies have slightly lower score than non-drama movies, with BF=22
+
+We can apply the same method to variable mpaa_rating_R, oscar_season and summer_season. None of these variables shows significant difference between the variable and score by boxplot followed by bayesian hypothesis testing
+```{r}
+boxplot(movies$audience_score~movies$mpaa_rating_R,main="Audience Score versus mpaa_rating_R", xlab="drama", 
+        ylab="Audience_Score")
+bayes_inference(y = audience_score, x = mpaa_rating_R, data = movies, statistic = "mean", type = "ht",null=0, alternative = "twosided")
+boxplot(movies$audience_score~movies$oscar_season,main="Audience Score versus oscar_season", xlab="drama", 
+        ylab="Audience_Score")
+bayes_inference(y = audience_score, x = oscar_season, data = movies, statistic = "mean", type = "ht",null=0, alternative = "twosided")
+boxplot(movies$audience_score~movies$summer_season,main="Audience Score versus summer_season.", xlab="drama", 
+        ylab="Audience_Score")
+bayes_inference(y = audience_score, x = summer_season, data = movies, statistic = "mean", type = "ht",null=0, alternative = "twosided")
+
+```
+
+
+* * *
+
+## Part 4: Modeling
+The goal for this part is to develop a model to predict score using the following variables:
+`feature_film`,` drama`, `runtime`, `mpaa_rating_R`, `thtr_rel_year`, `oscar_season`, `summer_season`, `imdb_rating`, `imdb_num_votes`, `critics_score`, `best_pic_nom`, `best_pic_win`, `best_actor_win`, `best_actress_win`, `best_dir_win`, `top200_box`
+
+First select the variables then build a model using bayesian regression
+```{r}
+movies_subset=subset(movies,select = c('audience_score','feature_film','drama', 'runtime', 'mpaa_rating_R', 'thtr_rel_year', 'oscar_season', 'summer_season', 'imdb_rating', 'imdb_num_votes', 'critics_score', 'best_pic_nom', 'best_pic_win', 'best_actor_win', 'best_actress_win', 'best_dir_win', 'top200_box'))
+model_score = bas.lm(audience_score ~ ., data = movies_subset,prior = "ZS-null", modelprior = uniform())
+model_score
+```
+We will only include variables with Posterior probablities>0.5, variable `imdb_rating`,`critics_score` are selected. Plotting models with their posterior odds also show these two variables are consistently selected in most models.
+```{r}
+image(model_score)
+```
+
+Let's build a model using only the selected 2 variables
+```{r}
+model_reduced = bas.lm(audience_score ~ imdb_rating + critics_score,data = movies_subset,prior = "ZS-null",modelprior = uniform())
+summary(model_reduced)
+```
+
+```{r}
+plot(model_reduced, which=1)
+```
+
+The residuals is plotted against the fitted value. Generally the residuals are i.i.d. And the 3 possible outlier should not be worried given we have so many datapoints.
+
+The posterior mean of the coefficients is listed as below:
+```{r}
+coef = coefficients(model_reduced)
+coef
+```
+
+
+* * *
+
+## Part 5: Prediction
+
+We would predict the moive "A STREET CAT NAMED BOB":https://www.rottentomatoes.com/m/a_street_cat_named_bob
+The actual audience score is 79 and critic score is 77, The ibmd rating is 7.4
+
+The prediction is carried out as below:
+```{r}
+cat=data.frame(imdb_rating = 7.4, critics_score = 77, audience_score = 79)
+predicted=predict(model_reduced, newdata = cat, interval = "confidence")
+predicted$fit
+sd(predicted$Ypred)
+```
+
+The predicted score is 77 compared with actual score of 79. And the standard deviation of the prediction is 7. Our prediction is within 1 std range of the actual value and very close.This test shows our model works ok but more predictions are needed to get a solid evaluation of the predictive power of our model
+
+* * *
+
+## Part 6: Conclusion
+
+The aim of this project is make prediction of audience score based on various variables. We found only 2 variables significantly influencce the score and are used in the model. We build the model, tested the fitted value and made some predictions of the model. The model generally works ok but from the residual it seems the model might not work well if the score is very low.
